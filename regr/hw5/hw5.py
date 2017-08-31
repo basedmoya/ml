@@ -33,25 +33,65 @@ def sse(y, y_hat):
     return ss
 
 
-def batch_gradient_descent(x, y, epochs, learning_rate, delta):
+def inverse_scaling_heuristic(eta, power_t, t):
+    if t == 0:
+        return eta
+    return (eta * 1.0) / (t ** power_t)
+
+
+def batch_gradient_descent(x, y, epochs, eta, delta, inv_scaling=False, power_t=0.0):
     theta = np.matrix(np.zeros(x.shape[1])).T
+    losses = []
     for step in range(epochs):
         predictions = np.dot(x, theta)
         gradient = np.dot(x.T, y - predictions) - (delta ** 2) * theta
-        theta = theta + (learning_rate / x.shape[0]) * gradient
+        eta_t = eta
+        if inv_scaling:
+            eta_t = inverse_scaling_heuristic(eta, power_t, step)
 
-    return theta
+        theta = theta + (eta_t / x.shape[0]) * gradient
+        losses.append(sse(y, np.dot(x, theta))[0, 0])
+
+    return theta,  losses
 
 
-def sgd(x, y, epochs, learning_rate, delta):
+def sgd(x, y, epochs, eta, delta, inv_scaling=False, power_t=0.0):
     theta = np.matrix(np.zeros(x.shape[1])).T
     losses = []
     for step in range(epochs):
         for i, xi in enumerate(x):
             predictions = np.dot(xi, theta)
             gradient = np.dot(xi.T, y[i, :] - predictions) - (1.0 / x.shape[0]) * (delta ** 2) * theta
-            theta = theta + learning_rate * gradient
-            losses.append(sse(y_train, np.dot(x, theta))[0, 0])
+            eta_t = eta
+
+            if inv_scaling:
+                t = i + x.shape[0] * step
+                eta_t = inverse_scaling_heuristic(eta, power_t, t)
+
+            theta = theta + eta_t * gradient
+            losses.append(sse(y, np.dot(x, theta))[0, 0])
+
+    return theta, losses
+
+
+def mbgd(x, y, epochs, eta, delta, batch_size, inv_scaling=False, power_t=0.0):
+    theta = np.matrix(np.zeros(x.shape[1])).T
+    losses = []
+    for step in range(epochs):
+        for i in range(0, x.shape[0], batch_size):
+            x_batch = x[i:i + batch_size, :]
+            y_batch = y[i:i + batch_size, :]
+
+            predictions = np.dot(x_batch, theta)
+            gradient = np.dot(x_batch.T,
+                              y_batch - predictions) - (1.0 * batch_size / x.shape[0]) * (delta ** 2) * theta
+            eta_t = eta
+            if inv_scaling:
+                t = i + x.shape[0] * step
+                eta_t = inverse_scaling_heuristic(eta, power_t, t)
+
+            theta = theta + (eta_t / batch_size) * gradient
+            losses.append(sse(y, np.dot(x, theta))[0, 0])
 
     return theta, losses
 
@@ -101,7 +141,7 @@ print("sum of squared errors in y_test was {}".format(test_total_error))
 # that are close to the errors you got from step 1. Run 100 epochs of training.
 
 # using learning rate = 0.01
-theta_bgd = batch_gradient_descent(X_train, y_train, 100, 0.01, 1)
+theta_bgd, losses_bgd = batch_gradient_descent(X_train, y_train, 100, 0.01, 1)
 
 
 print("\ntheta bgd for 0.01")
@@ -122,7 +162,7 @@ print("sum of squared errors in y_test was {}".format(test_total_error))
 
 
 # using learning rate = 0.1
-theta_bgd = batch_gradient_descent(X_train, y_train, 100, 0.1, 1)
+theta_bgd, losses_bgd = batch_gradient_descent(X_train, y_train, 100, 0.1, 1)
 
 
 print("\ntheta bgd for 0.1")
@@ -142,7 +182,7 @@ test_mean_error = mse(y_test, y_hat)
 print("sum of squared errors in y_test was {}".format(test_total_error))
 
 # using learning rate = 1.0
-theta_bgd = batch_gradient_descent(X_train, y_train, 100, 1.0, 1)
+theta_bgd, losses_bgd = batch_gradient_descent(X_train, y_train, 100, 1.0, 1)
 
 
 print("\ntheta bgd for 1.0")
@@ -219,21 +259,221 @@ print("\nbest results for theta sgd were for learning rate 0.01")
 # Step 4:
 # Denote by p the best learning rate you picked in step 3.
 # Run stochastic gradient descent again with two different fixed learning rates: p∗0.1 and p∗10
-learning_rate = 0.01
-theta_sgd_p_01, losses_p_01 = sgd(X_train, y_train, 5, learning_rate * 0.1, 1)
-theta_sgd_p_1, losses_p_1 = sgd(X_train, y_train, 5, learning_rate, 1)
-theta_sgd_p_10, losses_p_10 = sgd(X_train, y_train, 5, learning_rate * 10, 1)
+# learning_rate = 0.01
+# theta_sgd_p_01, losses_p_01 = sgd(X_train, y_train, 5, learning_rate * 0.1, 1)
+# theta_sgd_p_1, losses_p_1 = sgd(X_train, y_train, 5, learning_rate, 1)
+# theta_sgd_p_10, losses_p_10 = sgd(X_train, y_train, 5, learning_rate * 10, 1)
+#
+#
+# plt.plot(np.arange(len(losses_p_01)),np.array(losses_p_01), label='p*0.1')
+# plt.plot(np.arange(len(losses_p_1)),np.array(losses_p_1), label='p')
+# plt.plot(np.arange(len(losses_p_10)),np.array(losses_p_10), label='p*10')
+#
+# plt.title('SGD by learning rate')
+# plt.xlabel('# iterations')
+# plt.ylabel('training errors')
+# plt.legend(loc='best')
+# plt.show()
 
 
-plt.plot(np.arange(len(losses_p_01)),np.array(losses_p_01), label='p*0.1')
-plt.plot(np.arange(len(losses_p_1)),np.array(losses_p_1), label='p')
-plt.plot(np.arange(len(losses_p_10)),np.array(losses_p_10), label='p*10')
+# Step 5
+print("###############")
+print("STEP 5")
 
-plt.title('SGD by learning rate')
+print("###############")
+print("SGD with inverse scaling heuristic")
+
+print("\ntheta sgd using inv scaling with learning rate 0.01")
+inv_theta_sgd, inv_losses_sgd = sgd(X_train, y_train, 100, 0.01, 1, True, 0.25)
+print(inv_theta_sgd)
+
+# train error
+y_hat = np.dot(X_train, inv_theta_sgd)
+train_total_error = sse(y_train, y_hat)
+train_mean_error = mse(y_train, y_hat)
+print("sum of squared errors in y_train was {}".format(train_total_error))
+
+
+# test error
+y_hat = np.dot(X_test, inv_theta_sgd)
+
+test_total_error = sse(y_test, y_hat)
+test_mean_error = mse(y_test, y_hat)
+print("sum of squared errors in y_test was {}".format(test_total_error))
+
+
+# print("\ntheta sgd using inv scaling with learning rate 0.1")
+# inv_theta_sgd, inv_losses_sgd = sgd(X_train, y_train, 100, 0.1, 1, True, 0.25)
+# print(inv_theta_sgd)
+#
+# # train error
+# y_hat = np.dot(X_train, inv_theta_sgd)
+# train_total_error = sse(y_train, y_hat)
+# train_mean_error = mse(y_train, y_hat)
+# print("sum of squared errors in y_train was {}".format(train_total_error))
+#
+#
+# # test error
+# y_hat = np.dot(X_test, inv_theta_sgd)
+#
+# test_total_error = sse(y_test, y_hat)
+# test_mean_error = mse(y_test, y_hat)
+# print("sum of squared errors in y_test was {}".format(test_total_error))
+#
+#
+# print("\ntheta sgd using inv scaling with learning rate 1")
+# inv_theta_sgd, inv_losses_sgd = sgd(X_train, y_train, 100, 1, 1, True, 0.25)
+# print(inv_theta_sgd)
+#
+# # train error
+# y_hat = np.dot(X_train, inv_theta_sgd)
+# train_total_error = sse(y_train, y_hat)
+# train_mean_error = mse(y_train, y_hat)
+# print("sum of squared errors in y_train was {}".format(train_total_error))
+#
+#
+# # test error
+# y_hat = np.dot(X_test, inv_theta_sgd)
+#
+# test_total_error = sse(y_test, y_hat)
+# test_mean_error = mse(y_test, y_hat)
+# print("sum of squared errors in y_test was {}".format(test_total_error))
+
+
+print("###############")
+print("mini batch gd with inverse scaling heuristic")
+print("\ntheta mbgd using inv scaling with learning rate 0.01, batch_size = 10")
+# inv_theta_mbgd, inv_losses_mbgd = mbgd(X_train, y_train, 100, 0.01, 1, 10, True, 0.25)
+# print(inv_theta_mbgd)
+#
+# # train error
+# y_hat = np.dot(X_train, inv_theta_mbgd)
+# train_total_error = sse(y_train, y_hat)
+# train_mean_error = mse(y_train, y_hat)
+# print("sum of squared errors in y_train was {}".format(train_total_error))
+#
+#
+# # test error
+# y_hat = np.dot(X_test, inv_theta_mbgd)
+#
+# test_total_error = sse(y_test, y_hat)
+# test_mean_error = mse(y_test, y_hat)
+# print("sum of squared errors in y_test was {}".format(test_total_error))
+
+
+print("\ntheta mbgd using inv scaling with learning rate 0.1, batch_size = 10")
+inv_theta_mbgd, inv_losses_mbgd = mbgd(X_train, y_train, 100, 0.1, 1, 10, True, 0.25)
+print(inv_theta_mbgd)
+
+# train error
+y_hat = np.dot(X_train, inv_theta_mbgd)
+train_total_error = sse(y_train, y_hat)
+train_mean_error = mse(y_train, y_hat)
+print("sum of squared errors in y_train was {}".format(train_total_error))
+
+
+# test error
+y_hat = np.dot(X_test, inv_theta_mbgd)
+
+test_total_error = sse(y_test, y_hat)
+test_mean_error = mse(y_test, y_hat)
+print("sum of squared errors in y_test was {}".format(test_total_error))
+
+# print("\ntheta mbgd using inv scaling with learning rate 1, batch_size = 10")
+# inv_theta_mbgd, inv_losses_mbgd = mbgd(X_train, y_train, 100, 1, 1, 10, True, 0.25)
+# print(inv_theta_mbgd)
+#
+# # train error
+# y_hat = np.dot(X_train, inv_theta_mbgd)
+# train_total_error = sse(y_train, y_hat)
+# train_mean_error = mse(y_train, y_hat)
+# print("sum of squared errors in y_train was {}".format(train_total_error))
+#
+#
+# # test error
+# y_hat = np.dot(X_test, inv_theta_mbgd)
+#
+# test_total_error = sse(y_test, y_hat)
+# test_mean_error = mse(y_test, y_hat)
+# print("sum of squared errors in y_test was {}".format(test_total_error))
+
+
+print("###############")
+print("batch gd with inverse scaling heuristic")
+# print("\ntheta bgd using inv scaling with learning rate 0.01")
+# inv_theta_bgd = batch_gradient_descent(X_train, y_train, 100, 0.01, 1, True, 0.25)
+# print(inv_theta_bgd)
+#
+# # train error
+# y_hat = np.dot(X_train, inv_theta_bgd)
+# train_total_error = sse(y_train, y_hat)
+# train_mean_error = mse(y_train, y_hat)
+# print("sum of squared errors in y_train was {}".format(train_total_error))
+#
+#
+# # test error
+# y_hat = np.dot(X_test, inv_theta_bgd)
+#
+# test_total_error = sse(y_test, y_hat)
+# test_mean_error = mse(y_test, y_hat)
+# print("sum of squared errors in y_test was {}".format(test_total_error))
+#
+# print("\ntheta bgd using inv scaling with learning rate 0.1")
+# inv_theta_bgd = batch_gradient_descent(X_train, y_train, 100, 0.1, 1, True, 0.25)
+# print(inv_theta_bgd)
+#
+# # train error
+# y_hat = np.dot(X_train, inv_theta_bgd)
+# train_total_error = sse(y_train, y_hat)
+# train_mean_error = mse(y_train, y_hat)
+# print("sum of squared errors in y_train was {}".format(train_total_error))
+#
+#
+# # test error
+# y_hat = np.dot(X_test, inv_theta_bgd)
+#
+# test_total_error = sse(y_test, y_hat)
+# test_mean_error = mse(y_test, y_hat)
+# print("sum of squared errors in y_test was {}".format(test_total_error))
+
+print("\ntheta bgd using inv scaling with learning rate 1")
+inv_theta_bgd, inv_losses_bgd = batch_gradient_descent(X_train, y_train, 100, 1, 1, True, 0.25)
+print(inv_theta_bgd)
+
+# train error
+y_hat = np.dot(X_train, inv_theta_bgd)
+train_total_error = sse(y_train, y_hat)
+train_mean_error = mse(y_train, y_hat)
+print("sum of squared errors in y_train was {}".format(train_total_error))
+
+
+# test error
+y_hat = np.dot(X_test, inv_theta_bgd)
+
+test_total_error = sse(y_test, y_hat)
+test_mean_error = mse(y_test, y_hat)
+print("sum of squared errors in y_test was {}".format(test_total_error))
+
+
+# Step 6
+
+print(len(inv_losses_sgd))
+print(len(inv_losses_bgd))
+print(len(inv_losses_mbgd))
+plt.plot(np.arange(len(inv_losses_sgd)), np.array(inv_losses_sgd), label='sgd_0.01')
+plt.plot(np.arange(len(inv_losses_bgd)) * X_train.shape[0], np.array(inv_losses_bgd), label='bgd_1')
+plt.plot(np.arange(len(inv_losses_mbgd)) * 10, np.array(inv_losses_mbgd), label='mgbd_0.1')
+
+plt.title('gradient descent')
 plt.xlabel('# iterations')
 plt.ylabel('training errors')
 plt.legend(loc='best')
 plt.show()
+
+
+
+
+
 
 
 
